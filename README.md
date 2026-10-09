@@ -253,6 +253,38 @@ config["company_search_aliases"] = {
 StockTwits uses a symbol-stream API, so these text-search aliases do not change
 its symbol lookup or expand its market coverage.
 
+### Chinese news and financial statements
+
+AKShare is included in the dependencies. Its Eastmoney adapter serves Chinese
+company news and financial statements for Hong Kong (`.HK`), Shanghai (`.SS`,
+also `.SH`) and Shenzhen (`.SZ`) listings, without an API key. Other markets
+fall back to the next configured vendor. The default chains are:
+
+```dotenv
+TRADINGAGENTS_NEWS_VENDOR=akshare,yfinance
+TRADINGAGENTS_FUNDAMENTALS_VENDOR=sec_edgar,akshare,yfinance
+```
+
+These optional `.env` settings replace the category's vendor chain. For an
+individual tool, Python `config["tool_vendors"]` still takes precedence.
+AKShare serves `get_news`, `get_balance_sheet`, `get_income_statement` and
+`get_cashflow`; the company overview, insider transactions and global news
+continue through the existing providers.
+
+News searches combine the market's code (e.g. `1810.HK` becomes `01810`),
+resolved company names and configured aliases. Results are checked for
+relevance, deduplicated and filtered by publication time in Asia/Shanghai,
+including a cutoff at fetch time for the current day. Returned content is a
+snippet, not the full article. Recent search results cannot establish an
+absence of historical news.
+
+Statements preserve vendor amounts and report-period dates. The `quarterly`
+option selects available report periods; these can be half-year or cumulative
+figures, not standalone quarters. Currency and unit metadata missing from the
+interface is explicitly marked as unavailable. Because historical publication
+dates and revisions are not verified, these statements are withheld in past-date
+runs. SEC EDGAR remains the as-filed source for supported US filers.
+
 <p align="center">
   <img src="assets/cli/cli_init.png" width="100%" style="display: inline-block; margin: 0 2%;">
 </p>

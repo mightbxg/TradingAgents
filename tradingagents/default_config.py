@@ -27,6 +27,8 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_LLM_MAX_RETRIES":      "llm_max_retries",
     "TRADINGAGENTS_MAX_TOKENS":           "max_tokens",
     "TRADINGAGENTS_COMPANY_SEARCH_ALIASES": "company_search_aliases",
+    "TRADINGAGENTS_NEWS_VENDOR": "data_vendors.news_data",
+    "TRADINGAGENTS_FUNDAMENTALS_VENDOR": "data_vendors.fundamental_data",
     # Provider-specific reasoning/thinking knobs (None = each provider's own
     # default). Settable here for non-interactive runs; the CLI also offers an
     # interactive choice, which is skipped when the matching var is set.
@@ -82,7 +84,11 @@ def _apply_env_overrides(config: dict) -> dict:
         if raw is None or raw == "":
             continue
         try:
-            config[key] = _coerce(raw, config.get(key))
+            target = config
+            if "." in key:
+                parent, key = key.split(".", 1)
+                target = config[parent]
+            target[key] = _coerce(raw, target.get(key))
         except ValueError as exc:
             raise ValueError(f"Invalid value for {env_var}: {exc}") from exc
     return config
@@ -174,10 +180,10 @@ def build_default_config() -> dict:
         "data_vendors": {
             "core_stock_apis": "yfinance",       # Options: alpha_vantage, yfinance
             "technical_indicators": "yfinance",  # Options: alpha_vantage, yfinance
-            # Statements come from SEC EDGAR as filed (US filers), then Yahoo; the
-        # overview and insider tools, which SEC EDGAR does not serve, from Yahoo.
-        "fundamental_data": "sec_edgar,yfinance",  # Options: sec_edgar, alpha_vantage, yfinance
-            "news_data": "yfinance",             # Options: alpha_vantage, yfinance
+            # SEC as-filed statements for US filers, AKShare for HK/A shares,
+            # then Yahoo. Overview/insider tools are still served by Yahoo.
+            "fundamental_data": "sec_edgar,akshare,yfinance",  # Options: sec_edgar, akshare, alpha_vantage, yfinance
+            "news_data": "akshare,yfinance",     # Options: akshare, alpha_vantage, yfinance
             "macro_data": "fred",                # Options: fred (needs FRED_API_KEY)
             "prediction_markets": "polymarket",  # Options: polymarket (keyless)
         },

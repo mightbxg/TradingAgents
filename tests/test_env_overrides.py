@@ -72,6 +72,13 @@ def test_string_overrides(monkeypatch):
     assert config["output_language"] == "Chinese"
 
 
+def test_vendor_chains_from_env(monkeypatch):
+    config = _config_with_env(monkeypatch, TRADINGAGENTS_NEWS_VENDOR="akshare,yfinance",
+                              TRADINGAGENTS_FUNDAMENTALS_VENDOR="akshare,yfinance")
+    assert config["data_vendors"]["news_data"] == "akshare,yfinance"
+    assert config["data_vendors"]["fundamental_data"] == "akshare,yfinance"
+
+
 def test_int_coercion(monkeypatch):
     config = _config_with_env(
         monkeypatch,
