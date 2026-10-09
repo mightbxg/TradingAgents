@@ -1,3 +1,4 @@
+import json
 import os
 
 _TRADINGAGENTS_HOME = os.path.join(os.path.expanduser("~"), ".tradingagents")
@@ -25,6 +26,7 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_TEMPERATURE":          "temperature",
     "TRADINGAGENTS_LLM_MAX_RETRIES":      "llm_max_retries",
     "TRADINGAGENTS_MAX_TOKENS":           "max_tokens",
+    "TRADINGAGENTS_COMPANY_SEARCH_ALIASES": "company_search_aliases",
     # Provider-specific reasoning/thinking knobs (None = each provider's own
     # default). Settable here for non-interactive runs; the CLI also offers an
     # interactive choice, which is skipped when the matching var is set.
@@ -58,6 +60,18 @@ def _coerce(value: str, reference):
         return int(value)
     if isinstance(reference, float):
         return float(value)
+    if isinstance(reference, dict):
+        aliases = json.loads(value)
+        if not isinstance(aliases, dict):
+            raise ValueError("expected a JSON object mapping tickers to lists of names")
+        result = {}
+        for ticker, names in aliases.items():
+            if not ticker.strip() or not isinstance(names, list) or any(
+                not isinstance(name, str) or not name.strip() for name in names
+            ):
+                raise ValueError("expected non-empty ticker keys and lists of non-empty names")
+            result[ticker.strip().upper()] = [name.strip() for name in names]
+        return result
     return value
 
 
@@ -88,6 +102,8 @@ def build_default_config() -> dict:
         # the oldest resolved entries are pruned once this limit is exceeded.
         # Pending entries are never pruned. None disables rotation entirely.
         "memory_log_max_entries": None,
+        # Optional verified aliases from TRADINGAGENTS_COMPANY_SEARCH_ALIASES.
+        "company_search_aliases": {},
         # LLM settings
         "llm_provider": "openai",
         "deep_think_llm": "gpt-6-sol",

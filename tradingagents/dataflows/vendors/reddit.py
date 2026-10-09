@@ -30,6 +30,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from tradingagents.dataflows.date_window import coverage_gap, in_window
+from tradingagents.dataflows.search_terms import company_search_names
 from tradingagents.dataflows.symbols import crypto_base
 
 logger = logging.getLogger(__name__)
@@ -254,6 +255,7 @@ def fetch_reddit_posts(
     start_date: str | None = None,
     end_date: str | None = None,
     screen=None,
+    company_names=(),
 ) -> str:
     """Fetch recent Reddit posts mentioning ``ticker`` across finance
     subreddits (by default ``subreddits_for(ticker)``) and return them as a
@@ -277,7 +279,12 @@ def fetch_reddit_posts(
     # ("BTC") so the query actually matches discussion instead of near-nothing.
     ticker = crypto_base(ticker) or ticker
     label = ", ".join(f"r/{s}" for s in subreddits)
-    fetched = _fetch_subreddit_rss(ticker, "+".join(subreddits), _FEED_PAGE, timeout)
+    names = company_search_names(ticker, company_names)
+    terms = [ticker, *names]
+    query = (" OR ".join('"' + term.replace('"', '') + '"' for term in terms)
+             if names else ticker)
+    fetched = _fetch_subreddit_rss(query, "+".join(subreddits), _FEED_PAGE, timeout)
+    search_note = f"Search terms: {', '.join(terms)}. Results cover this search only."
     if fetched is None:
         return f"<Reddit unavailable: fetch failed ({label}); this is not an absence of discussion>"
 
@@ -289,7 +296,8 @@ def fetch_reddit_posts(
             "Reddit search", f"discussion of {ticker.upper()}",
         )
         period = f"within {start_date}..{end_date}" if window else "in the past 7 days"
-        return gap or f"<no Reddit posts found mentioning {ticker.upper()} across {label} {period}>"
+        return gap or (f"{search_note}\n<no Reddit posts found mentioning {ticker.upper()} "
+                       f"across {label} {period}>")
 
     def sub_of(p):
         return p.get("subreddit") or (subreddits[0] if len(subreddits) == 1 else "unknown")
@@ -334,4 +342,4 @@ def fetch_reddit_posts(
                 + (f"\n    body excerpt: {selftext}" if selftext else "")
             )
         blocks.append("\n".join(lines))
-    return "\n\n".join(([note] if note else []) + blocks)
+    return "\n\n".join(([note] if note else []) + [search_note] + blocks)

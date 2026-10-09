@@ -26,6 +26,34 @@ def test_no_env_uses_built_in_defaults(monkeypatch):
     assert config["backend_url"] is None
     assert config["max_debate_rounds"] == 1
     assert config["checkpoint_enabled"] is False
+    assert config["company_search_aliases"] == {}
+
+
+def test_company_aliases_json_from_dotenv(monkeypatch):
+    from io import StringIO
+
+    from dotenv import dotenv_values
+
+    parsed = dotenv_values(stream=StringIO(
+        '''TRADINGAGENTS_COMPANY_SEARCH_ALIASES='{"1810.hk": ["Xiaomi", "小米"]}'\n'''
+    ))
+    config = _config_with_env(monkeypatch, **parsed)
+    assert config["company_search_aliases"] == {"1810.HK": ["Xiaomi", "小米"]}
+
+
+@pytest.mark.parametrize("value", [
+    "not-json", "[]", "null", '{"1810.HK": "小米"}',
+    '{"1810.HK": [42]}', '{"1810.HK": [""]}', '{"": ["小米"]}',
+])
+def test_invalid_company_aliases_fail_at_startup(monkeypatch, value):
+    with pytest.raises(ValueError, match="TRADINGAGENTS_COMPANY_SEARCH_ALIASES"):
+        _config_with_env(monkeypatch, TRADINGAGENTS_COMPANY_SEARCH_ALIASES=value)
+
+
+def test_empty_company_aliases(monkeypatch):
+    for value in ("", "{}"):
+        config = _config_with_env(monkeypatch, TRADINGAGENTS_COMPANY_SEARCH_ALIASES=value)
+        assert config["company_search_aliases"] == {}
 
 
 def test_string_overrides(monkeypatch):

@@ -9,6 +9,7 @@ from dateutil.relativedelta import relativedelta
 from tradingagents.dataflows.config import get_config
 from tradingagents.dataflows.date_window import coverage_gap, in_window
 from tradingagents.dataflows.errors import VendorUnavailableError
+from tradingagents.dataflows.search_terms import company_search_names, mentions_company
 from tradingagents.dataflows.symbols import normalize_symbol
 from tradingagents.dataflows.vendors.yahoo.common import yf_retry
 
@@ -55,21 +56,39 @@ def _extract_article_data(article: dict) -> dict:
 
 
 def _search_news(canonical: str, limit: int) -> tuple[list, bool]:
-    """Yahoo search's articles tagged with ``canonical``, and whether it knows the symbol.
+    """Search ticker and company aliases, retaining tagged or name-matched articles.
 
-    Search answers when the quote feed is empty, but its articles are a
-    relevance-picked sample, and some are tagged loosely; only those tagged with
-    the symbol are about it.
+    Resolve names only from the matching quote, never a fuzzy neighbouring
+    company. Results are a sample, not an exhaustive news archive.
     """
     search = yf_retry(lambda: yf.Search(canonical, news_count=limit))
-    if search is None:  # Yahoo answered "not found": its search is down
-        return [], False
-    tagged = [
-        a for a in (search.news or [])
-        if canonical in (t.upper() for t in a.get("relatedTickers") or [])
-    ]
-    knows = any((q.get("symbol") or "").upper() == canonical for q in search.quotes or [])
-    return tagged, knows or bool(search.news)
+    quotes = getattr(search, "quotes", None) or []
+    names = company_search_names(canonical, [
+        q.get(key) for q in quotes if (q.get("symbol") or "").upper() == canonical
+        for key in ("longname", "shortname", "longName", "shortName")
+    ])
+    results = [search] if search is not None else []
+    for name in names:
+        # A failed alias lookup must not discard successful ticker results.
+        try:
+            found = yf_retry(lambda query=name: yf.Search(query, news_count=limit))
+        except VendorUnavailableError:
+            continue
+        if found is not None:
+            results.append(found)
+    articles, seen = [], set()
+    for result in results:
+        for article in result.news or []:
+            data = _extract_article_data(article)
+            tagged = canonical in (t.upper() for t in article.get("relatedTickers") or [])
+            if not tagged and not mentions_company(data["title"] + " " + data["summary"], names):
+                continue
+            key = data["link"] or (data["title"], data["pub_date"])
+            if key not in seen:
+                seen.add(key)
+                articles.append(article)
+    knows = any((q.get("symbol") or "").upper() == canonical for q in quotes)
+    return articles, knows or any(r.news for r in results)
 
 
 def _format_articles(articles: list[dict]) -> str:
@@ -92,7 +111,7 @@ def get_news_yfinance(
     """News about ``ticker`` published in the window, from Yahoo Finance.
 
     The symbol's quote feed comes first. When it is empty, Yahoo search serves
-    the articles tagged with the symbol; when it has none, or neither answers,
+    articles matching the symbol or resolved company names; when it has none, or neither answers,
     Yahoo news is unavailable, which is not an absence of news, and a configured
     next vendor is tried. Search results are a sample, so finding none in the
     window never reads as "no news".
@@ -111,9 +130,9 @@ def get_news_yfinance(
         if not answered:
             raise VendorUnavailableError(f"Yahoo Finance returned no news response for {canonical}")
         if not found:
-            # With the quote feed empty, no tagged article says nothing about the
-            # company's news (Yahoo tags no article with most non-US listings).
-            raise VendorUnavailableError(f"Yahoo Finance has no news articles tagged {canonical}")
+            # Empty search results do not prove an absence of company news.
+            raise VendorUnavailableError(f"Yahoo Finance has no relevant news articles for {canonical} "
+                                         "after ticker and company-name searches")
         articles = [_extract_article_data(a) for a in found]
 
     start_dt = datetime.strptime(start_date, "%Y-%m-%d")

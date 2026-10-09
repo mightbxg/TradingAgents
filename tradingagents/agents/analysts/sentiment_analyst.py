@@ -72,7 +72,8 @@ def create_sentiment_analyst(llm):
         )
         subreddits = subreddits_for(ticker)
         reddit_block = fetch_reddit_posts(
-            ticker, subreddits, start_date=start_date, end_date=end_date, screen=screen
+            ticker, subreddits, start_date=start_date, end_date=end_date, screen=screen,
+            company_names=state.get("company_search_names", []),
         )
 
         system_message = _build_system_message(
